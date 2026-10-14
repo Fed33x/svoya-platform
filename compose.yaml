@@ -1,0 +1,17 @@
+services:
+  svoya:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Run scripts/setup.sh first}
+      TV_KEY: ${TV_KEY:?Run scripts/setup.sh first}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes:
+      - svoya-data:/app/data
+    init: true
+    stop_grace_period: 15s
+volumes:
+  svoya-data:
