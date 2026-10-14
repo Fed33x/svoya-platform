@@ -52,7 +52,7 @@ function useGame(auth: any) {
 }
 function Header({
   connected,
-  label = "ИГРОВОЙ ВЕЧЕР",
+  label = "АНТОНУ — 28",
 }: {
   connected?: boolean;
   label?: string;
@@ -60,7 +60,7 @@ function Header({
   return (
     <header>
       <a className="brand" href="/">
-        СВОЯ<span>●</span>
+        СВОЯ ИГРА
       </a>
       <span className="eyebrow">{label}</span>
       <span className={"connection " + (connected ? "live" : "")}>

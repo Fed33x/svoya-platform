@@ -8,19 +8,24 @@
     "Segoe UI",
     sans-serif;
   color: #f1f0f6;
-  background: #101119;
+  background: #2c2440;
   font-synthesis: none;
-  --surface: #1a1b26;
-  --line: #30313f;
-  --lime: #d5ff70;
-  --muted: #9395aa;
-  --lavender: #b8a0ff;
+  --surface: #382e50;
+  --line: #5a4b76;
+  --lime: #9bea72;
+  --yellow: #f7c55b;
+  --muted: #b8afc9;
+  --lavender: #d0b9ff;
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% -20%, #5a4678 0, transparent 42%),
+    #2c2440;
 }
 button,
 input,
@@ -32,7 +37,7 @@ button,
   cursor: pointer;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #242532;
+  background: #493b63;
   color: #f5f4fa;
   padding: 12px 17px;
   text-decoration: none;
@@ -47,7 +52,7 @@ button,
 }
 button:hover:not(:disabled),
 .button:hover {
-  background: #323344;
+  background: #5b4a78;
 }
 button:active:not(:disabled) {
   transform: translateY(1px);
@@ -94,11 +99,13 @@ header {
   align-items: center;
   gap: 28px;
   border-bottom: 1px solid var(--line);
+  background: #2c2440d9;
+  backdrop-filter: blur(14px);
 }
 .brand {
-  font-size: 30px;
+  font-size: 27px;
   font-weight: 950;
-  letter-spacing: -2px;
+  letter-spacing: -1.4px;
   text-decoration: none;
 }
 .brand span {
@@ -142,7 +149,7 @@ header {
 }
 .tag {
   display: inline-block;
-  background: #282a25;
+  background: #493c5d;
   color: var(--lime);
   border: 1px solid #424934;
   padding: 9px 12px;
@@ -181,7 +188,7 @@ textarea {
   display: block;
   width: 100%;
   padding: 14px 15px;
-  background: #151620;
+  background: #261f38;
   color: white;
   border: 1px solid #3c3d4e;
   border-radius: 10px;
@@ -262,16 +269,18 @@ footer {
   color: var(--muted);
 }
 .buzzer {
-  border-radius: 50%;
+  border-radius: 28px;
   width: 100%;
-  aspect-ratio: 1;
+  min-height: 270px;
   display: flex;
   flex-direction: column;
-  background: radial-gradient(circle at 50% 35%, #343646, #20212e);
-  border: 7px solid #2d2f3d;
+  background: linear-gradient(145deg, #ffd979, var(--yellow));
+  color: #33250a;
+  border: 3px solid #ffe29a;
   box-shadow:
-    0 0 0 10px #1a1b25,
-    inset 0 -14px 0 #14151d;
+    0 18px 42px #17102270,
+    0 0 34px #f7c55b45,
+    inset 0 -10px 0 #d99d32;
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
@@ -279,7 +288,7 @@ footer {
 }
 .buzzer:disabled {
   opacity: 1;
-  color: #73768d;
+  color: #33250a;
 }
 .buzzer span {
   font-size: 23px;
@@ -295,21 +304,25 @@ footer {
   font-weight: 500;
 }
 .buzzer.armed {
-  background: radial-gradient(circle at 50% 30%, #e6ffa9, #b8e75f);
-  color: #17230c;
-  border-color: #85ac42;
+  background: linear-gradient(145deg, #c9ffad, var(--lime));
+  color: #18330f;
+  border-color: #d8ffc4;
   box-shadow:
-    0 0 0 10px #1e261a,
-    inset 0 -14px 0 #83aa3e,
-    0 0 60px #c1ff4c15;
+    0 18px 42px #17102270,
+    0 0 44px #9bea7270,
+    inset 0 -10px 0 #63b64c;
 }
 .buzzer.armed:hover {
   background: #d5ff70;
 }
 .buzzer.yours {
-  background: #53427b;
+  background: linear-gradient(145deg, #8063b5, #5d458d);
   color: white;
   border-color: var(--lavender);
+  box-shadow:
+    0 18px 42px #17102270,
+    0 0 38px #d0b9ff55,
+    inset 0 -10px 0 #49346f;
 }
 .section-line {
   display: flex;
@@ -318,13 +331,26 @@ footer {
   color: var(--muted);
   margin: 24px 0 16px;
 }
+.scores {
+  overflow: hidden;
+  border: 1px solid #6b5a88;
+  border-radius: 16px;
+  background: #332a49aa;
+  box-shadow: 0 14px 32px #17102245;
+}
+.scores > .muted {
+  padding: 0 15px;
+}
 .score-row {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 14px 0;
-  border-bottom: 1px solid #2e2f3c;
+  padding: 14px 15px;
+  border-bottom: 1px solid #594a73;
   font-size: 14px;
+}
+.score-row:last-child {
+  border-bottom: 0;
 }
 .score-row .rank {
   color: var(--muted);
@@ -351,10 +377,7 @@ footer {
   background: #b8e577;
 }
 .score-row.winner {
-  background: #30263e;
-  border-radius: 9px;
-  padding-left: 8px;
-  padding-right: 8px;
+  background: #4d3c6a;
 }
 .callout {
   border: 1px solid #514168;
@@ -407,7 +430,7 @@ footer {
 .tabs {
   display: flex;
   gap: 4px;
-  background: #171821;
+  background: #2c243e;
   border: 1px solid #292b38;
   border-radius: 11px;
   padding: 4px;
@@ -421,7 +444,7 @@ footer {
   border-radius: 7px;
 }
 .tabs button.active {
-  background: #373247;
+  background: #58456f;
   color: #dfccff;
 }
 .admin-grid {
@@ -456,8 +479,8 @@ aside.panel {
   width: 170px;
   flex-shrink: 0;
   padding: 18px;
-  background: #242131;
-  border: 1px solid #393144;
+  background: #443657;
+  border: 1px solid #65517e;
   border-radius: 10px;
   color: #d4c1f5;
   font-size: 14px;
@@ -472,7 +495,7 @@ aside.panel {
   flex: 1;
   min-width: 0;
   height: 94px;
-  background: #22232f;
+  background: #3b3150;
   color: var(--lime);
   font-size: 27px;
   font-weight: 750;
@@ -486,7 +509,7 @@ aside.panel {
 }
 .admin .cell:disabled {
   color: #545666;
-  background: #181922;
+  background: #2f2740;
 }
 .bottom-controls {
   display: flex;
@@ -509,7 +532,7 @@ aside.panel {
 }
 .host-answer {
   padding: 20px;
-  background: #11121b;
+  background: #261f38;
   border-radius: 12px;
   margin: 24px 0;
 }
@@ -537,7 +560,7 @@ aside.panel {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  background: #242131;
+  background: #443657;
 }
 .track span {
   font-size: 40px;
@@ -571,7 +594,7 @@ aside.panel {
 .key {
   display: block;
   overflow-wrap: anywhere;
-  background: #11121b;
+  background: #261f38;
   padding: 15px;
   color: var(--lime);
   border-radius: 8px;
@@ -611,7 +634,7 @@ aside.panel {
 .editor {
   max-width: 1050px;
   margin: auto;
-  background: #1a1b26;
+  background: #382e50;
   border: 1px solid #414354;
   border-radius: 18px;
   padding: 26px;
@@ -710,12 +733,13 @@ aside.panel {
   justify-content: center;
   gap: 18px;
   flex-wrap: wrap;
+  padding: 12px;
 }
 .tv-scores .score-row {
   padding: 12px 18px;
   min-width: 160px;
   gap: 15px;
-  background: #1b1c28;
+  background: #443657;
   border: 1px solid var(--line);
   border-radius: 10px;
 }
