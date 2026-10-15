@@ -79,10 +79,13 @@ export interface Game {
   revision: number;
   epoch: string;
   playId: string;
+  screenWelcome: boolean;
   mode: Mode;
   phase: Phase;
   current: string | null;
   step: number;
+  melodyElapsed: number;
+  playStartedAt: number | null;
   players: Player[];
   used: string[];
   blocked: string[];
@@ -101,7 +104,7 @@ export interface Game {
 }
 export function demoPack(): Pack {
   return {
-    title: "Вечер Антона",
+    title: "28-й Канал",
     questions: [
       "Разминка",
       "Знакомые места",
@@ -165,10 +168,13 @@ export function initial(pack = demoPack()): Game {
     revision: 0,
     epoch: randomUUID(),
     playId: randomUUID(),
+    screenWelcome: false,
     mode: "quiz",
     phase: "lobby",
     current: null,
     step: 0,
+    melodyElapsed: 0,
+    playStartedAt: null,
     players: [],
     used: [],
     blocked: [],
@@ -199,8 +205,41 @@ export function bump(g: Game) {
   g.revision++;
   g.epoch = randomUUID();
 }
+export function freezeMelody(g: Game, now = Date.now()) {
+  if (
+    g.mode !== "melody" ||
+    g.phase !== "open" ||
+    g.playStartedAt === null
+  )
+    return;
+  const track = item(g);
+  if (!track || !("steps" in track)) return;
+  const target = track.steps[g.step].seconds;
+  g.melodyElapsed = Math.min(
+    target,
+    Math.max(0, g.melodyElapsed + (now - g.playStartedAt) / 1000),
+  );
+  g.playStartedAt = null;
+}
 function requireThat(ok: unknown, msg: string): asserts ok {
   if (!ok) throw new Error(msg);
+}
+function startOpen(g: Game, tvReady: boolean) {
+  requireThat(g.phase === "question", "Кнопки сейчас нельзя открыть");
+  requireThat(!g.screenWelcome, "Сначала верните игровой экран");
+  requireThat(tvReady, "Подключите экран и дождитесь готовности медиа");
+  const startedAt = Date.now();
+  const current = item(g);
+  const melodyRemaining =
+    g.mode === "melody" && current && "steps" in current
+      ? Math.max(0, current.steps[g.step].seconds - g.melodyElapsed)
+      : 0;
+  g.phase = "open";
+  g.playId = randomUUID();
+  g.winner = null;
+  g.playStartedAt = g.mode === "melody" ? startedAt : null;
+  g.deadline =
+    startedAt + g.settings.openSeconds * 1000 + melodyRemaining * 1000;
 }
 export function command(g: Game, type: string, p: any = {}, tvReady = false) {
   switch (type) {
@@ -210,6 +249,19 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
         "Сначала завершите текущую игру",
       );
       g.phase = "board";
+      g.screenWelcome = false;
+      break;
+    case "screenWelcome":
+      requireThat(typeof p.visible === "boolean", "Некорректный режим экрана");
+      if (
+        p.visible &&
+        ["question", "open", "answering"].includes(g.phase)
+      ) {
+        freezeMelody(g);
+        g.phase = "paused";
+        g.deadline = null;
+      }
+      g.screenWelcome = p.visible;
       break;
     case "mode":
       requireThat(["quiz", "melody"].includes(p.mode), "Неизвестный режим");
@@ -220,6 +272,8 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
       g.mode = p.mode;
       g.phase = "board";
       g.current = null;
+      g.melodyElapsed = 0;
+      g.playStartedAt = null;
       g.winner = null;
       g.deadline = null;
       break;
@@ -234,6 +288,8 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
       );
       g.current = p.id;
       g.step = 0;
+      g.melodyElapsed = 0;
+      g.playStartedAt = null;
       g.blocked = [];
       g.winner = null;
       g.attempts = [];
@@ -241,19 +297,39 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
       g.deadline = null;
       break;
     case "open":
-      requireThat(g.phase === "question", "Кнопки сейчас нельзя открыть");
-      requireThat(tvReady, "Подключите экран и дождитесь готовности медиа");
-      g.phase = "open";
-      g.playId = randomUUID();
-      g.winner = null;
-      g.deadline =
-        Date.now() +
-        g.settings.openSeconds * 1000 +
-        (g.mode === "melody"
-          ? g.pack.tracks.find((t) => t.id === g.current)!.steps[g.step]
-              .seconds * 1000
-          : 0);
+      startOpen(g, tvReady);
       break;
+    case "replayStep": {
+      requireThat(
+        g.mode === "melody" && ["question", "open"].includes(g.phase),
+        "Сейчас нельзя повторить отрезок",
+      );
+      const track = item(g);
+      requireThat(track && "steps" in track, "Мелодия не найдена");
+      g.melodyElapsed = g.step ? track.steps[g.step - 1].seconds : 0;
+      g.playStartedAt = null;
+      g.deadline = null;
+      g.phase = "question";
+      startOpen(g, tvReady);
+      record(g, `Повторён отрезок ${g.step + 1}`);
+      break;
+    }
+    case "restartMelody": {
+      requireThat(
+        g.mode === "melody" && ["question", "open"].includes(g.phase),
+        "Сейчас нельзя начать песню сначала",
+      );
+      g.step = 0;
+      g.melodyElapsed = 0;
+      g.playStartedAt = null;
+      g.deadline = null;
+      g.blocked = [];
+      g.winner = null;
+      g.phase = "question";
+      startOpen(g, tvReady);
+      record(g, "Мелодия запущена сначала");
+      break;
+    }
     case "nextStep": {
       requireThat(
         g.mode === "melody" && ["question", "open"].includes(g.phase),
@@ -261,6 +337,7 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
       );
       const t = g.pack.tracks.find((t) => t.id === g.current)!;
       requireThat(g.step < t.steps.length - 1, "Это последний фрагмент");
+      freezeMelody(g);
       g.step++;
       g.blocked = [];
       g.winner = null;
@@ -304,6 +381,7 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
           g.current,
         "Нет открытого вопроса",
       );
+      freezeMelody(g);
       g.phase = "revealed";
       g.deadline = null;
       if (!g.used.includes(g.current)) g.used.push(g.current);
@@ -312,6 +390,8 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
       requireThat(g.phase === "revealed", "Сначала раскройте ответ");
       g.phase = "board";
       g.current = null;
+      g.melodyElapsed = 0;
+      g.playStartedAt = null;
       g.winner = null;
       g.deadline = null;
       break;
@@ -320,6 +400,7 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
         ["question", "open", "answering"].includes(g.phase),
         "Нечего ставить на паузу",
       );
+      freezeMelody(g);
       g.phase = "paused";
       g.deadline = null;
       break;
@@ -331,14 +412,32 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
         : null;
       break;
     case "finish":
+      freezeMelody(g);
       g.phase = "finished";
       g.deadline = null;
       g.current = null;
+      g.melodyElapsed = 0;
+      g.playStartedAt = null;
       g.winner = null;
       break;
     case "lock":
       g.locked = !!p.locked;
       break;
+    case "removePlayer": {
+      const player = g.players.find((x) => x.id === p.id);
+      requireThat(player, "Команда не найдена");
+      g.players = g.players.filter((x) => x.id !== player.id);
+      g.blocked = g.blocked.filter((id) => id !== player.id);
+      g.attempts = g.attempts.filter((attempt) => attempt.id !== player.id);
+      if (g.chooser === player.id) g.chooser = null;
+      if (g.winner === player.id) {
+        g.winner = null;
+        g.deadline = null;
+        if (g.phase === "answering") g.phase = "question";
+      }
+      record(g, `Команда «${player.name}» удалена из комнаты`);
+      break;
+    }
     case "score": {
       const x = g.players.find((x) => x.id === p.id);
       requireThat(
@@ -366,6 +465,8 @@ export function command(g: Game, type: string, p: any = {}, tvReady = false) {
       g.pack = packSchema.parse(p);
       g.used = [];
       g.current = null;
+      g.melodyElapsed = 0;
+      g.playStartedAt = null;
       g.phase = "board";
       g.winner = null;
       g.chooser = null;
@@ -396,6 +497,7 @@ export function buzz(g: Game, id: string, epoch: string) {
     "Игрок не найден",
   );
   requireThat(!g.blocked.includes(id), "Вы уже отвечали на этом этапе");
+  freezeMelody(g);
   g.winner = id;
   g.phase = "answering";
   g.deadline = Date.now() + g.settings.answerSeconds * 1000;
@@ -409,9 +511,12 @@ export function publicState(g: Game, role: string) {
     revision: g.revision,
     epoch: g.epoch,
     playId: g.playId,
+    screenWelcome: g.screenWelcome,
     mode: g.mode,
     phase: g.phase,
     step: g.step,
+    melodyElapsed: g.melodyElapsed,
+    playStartedAt: g.playStartedAt,
     players: g.players.map(({ token, ...p }) => p),
     used: g.used,
     blocked: g.blocked,
@@ -426,7 +531,10 @@ export function publicState(g: Game, role: string) {
       category: q.category,
       value: q.value,
     })),
-    tracks: g.pack.tracks.map((t, i) => ({ id: t.id, label: `Трек ${i + 1}` })),
+    tracks: g.pack.tracks.map((t, i) => ({
+      id: t.id,
+      label: `Мелодия ${i + 1}`,
+    })),
     current: q
       ? {
           id: q.id,
@@ -436,6 +544,10 @@ export function publicState(g: Game, role: string) {
             ? {
                 seconds: q.steps[g.step].seconds,
                 steps: q.steps.length,
+                ladder: q.steps.map((step) => ({
+                  seconds: step.seconds,
+                  points: step.points,
+                })),
                 start: q.start,
               }
             : {}),

@@ -4,6 +4,7 @@ import {
   initial,
   command,
   buzz,
+  freezeMelody,
   publicState,
   packSchema,
 } from "../server/game.js";
@@ -90,14 +91,32 @@ test("melody fragments lower price, unblock players and scores remain separate",
   ];
   command(g, "mode", { mode: "melody" });
   command(g, "select", { id: "song" });
+  assert.deepEqual((publicState(g, "tv") as any).current.ladder, [
+    { seconds: 1, points: 500 },
+    { seconds: 3, points: 400 },
+  ]);
+  assert.equal((publicState(g, "tv") as any).tracks[0].label, "Мелодия 1");
   command(g, "open", {}, true);
+  g.playStartedAt = 1000;
+  freezeMelody(g, 1600);
+  assert.equal(g.melodyElapsed, 0.6);
   buzz(g, "a", g.epoch);
   command(g, "wrong");
   assert.equal(g.players[0].scores.melody, 0);
   assert.ok(g.blocked.includes("a"));
   command(g, "nextStep");
   assert.deepEqual(g.blocked, []);
+  assert.equal((publicState(g, "tv") as any).melodyElapsed, 0.6);
+  command(g, "restartMelody", {}, true);
+  assert.equal(g.step, 0);
+  assert.equal(g.melodyElapsed, 0);
+  assert.equal(g.phase, "open");
+  command(g, "nextStep");
   command(g, "open", {}, true);
+  command(g, "replayStep", {}, true);
+  assert.equal(g.step, 1);
+  assert.equal(g.melodyElapsed, 1);
+  assert.equal(g.phase, "open");
   buzz(g, "a", g.epoch);
   command(g, "correct");
   assert.equal(g.players[0].scores.melody, 400);
@@ -140,4 +159,38 @@ test("new evening clears scores but preserves players, settings and questions", 
   assert.equal(g.players[0].scores.quiz, 0);
   assert.equal(g.settings.answerSeconds, 30);
   assert.equal(g.pack.questions.length, 20);
+});
+test("removing a team clears its active game references", () => {
+  const g = setup();
+  g.phase = "answering";
+  g.winner = "b";
+  g.chooser = "b";
+  g.blocked = ["a", "b"];
+  g.attempts = [
+    { id: "a", at: 1, accepted: false },
+    { id: "b", at: 2, accepted: true },
+  ];
+  command(g, "removePlayer", { id: "b" });
+  assert.deepEqual(
+    g.players.map((player) => player.id),
+    ["a"],
+  );
+  assert.equal(g.phase, "question");
+  assert.equal(g.winner, null);
+  assert.equal(g.chooser, null);
+  assert.equal(g.deadline, null);
+  assert.deepEqual(g.blocked, ["a"]);
+  assert.deepEqual(g.attempts, [{ id: "a", at: 1, accepted: false }]);
+});
+test("host can show the connection screen without resetting the game", () => {
+  const g = setup();
+  command(g, "screenWelcome", { visible: true });
+  assert.equal(g.screenWelcome, true);
+  assert.equal(g.phase, "paused");
+  assert.equal(g.current, "q0-0");
+  command(g, "screenWelcome", { visible: false });
+  assert.equal(g.screenWelcome, false);
+  assert.equal(g.phase, "paused");
+  command(g, "resume");
+  assert.equal(g.phase, "question");
 });

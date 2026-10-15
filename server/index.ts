@@ -15,6 +15,7 @@ import {
   command,
   buzz,
   bump,
+  freezeMelody,
   record,
   publicState,
   packSchema,
@@ -27,6 +28,12 @@ const adminPassword = process.env.ADMIN_PASSWORD;
 if (!adminPassword || adminPassword.length < 8)
   throw new Error("Set ADMIN_PASSWORD (at least 8 characters)");
 const tvKey = process.env.TV_KEY || randomBytes(12).toString("hex");
+const teamNames = [
+  "Тихо, блять, ложимся спать",
+  "Лондон — Магадан",
+  "Паром на Ольхон",
+  "Всезнайки-незнайки, зайки",
+] as const;
 const equal = (a: unknown, b: string) =>
   typeof a === "string" &&
   Buffer.byteLength(a) === Buffer.byteLength(b) &&
@@ -38,7 +45,14 @@ db.exec(
 const row = db.prepare("SELECT json FROM state WHERE id=1").get() as
   { json: string } | undefined;
 let game: Game = row ? JSON.parse(row.json) : initial();
+game.screenWelcome ??= false;
+game.melodyElapsed ??= 0;
+game.playStartedAt ??= null;
+if (game.pack.title === "Вечер Антона") game.pack.title = "28-й Канал";
+for (const player of game.players)
+  if (player.name === "Паром на Аршан") player.name = "Паром на Ольхон";
 if (["open", "answering", "question"].includes(game.phase)) {
+  freezeMelody(game);
   game.phase = "paused";
   game.deadline = null;
   bump(game);
@@ -141,8 +155,8 @@ app.post(
       return reply.code(403).send({ error: "Ведущий закрыл вход" });
     const name =
       typeof b?.name === "string" ? b.name.trim().replace(/\s+/g, " ") : "";
-    if (name.length < 1 || name.length > 24)
-      return reply.code(400).send({ error: "Имя: от 1 до 24 символов" });
+    if (!teamNames.some((team) => team === name))
+      return reply.code(400).send({ error: "Выберите команду из списка" });
     if (
       game.players.some(
         (p) => p.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
@@ -150,9 +164,7 @@ app.post(
     )
       return reply
         .code(409)
-        .send({ error: "Это имя уже занято. Добавьте фамилию или ник" });
-    if (game.players.length >= 100)
-      return reply.code(409).send({ error: "В комнате уже 100 игроков" });
+        .send({ error: "Эта команда уже подключена" });
     const p = {
       id: randomUUID(),
       token: randomBytes(32).toString("hex"),
@@ -363,12 +375,25 @@ io.on("connection", (s) => {
             game.players.push(player);
         game.revision = revision;
         if (["open", "answering"].includes(game.phase)) {
+          freezeMelody(game);
           game.phase = "paused";
           game.deadline = null;
         }
         bump(game);
         record(game, "Ведущий отменил последнее действие");
       } else {
+        if (p.type === "removePlayer") {
+          const playerId = p.payload?.id;
+          if (typeof playerId !== "string")
+            throw new Error("Команда не найдена");
+          const online = [...io.sockets.sockets.values()].some(
+            (socket) =>
+              socket.data.role === "player" &&
+              socket.data.player === playerId &&
+              socket.connected,
+          );
+          if (online) throw new Error("Сначала дождитесь отключения команды");
+        }
         if (p.type === "pack") {
           const pack = packSchema.parse(p.payload);
           for (const x of [...pack.questions, ...pack.tracks])
@@ -381,6 +406,7 @@ io.on("connection", (s) => {
       }
       if (before.current !== game.current || before.step !== game.step)
         readyItem = null;
+      if (p.type === "screenWelcome") readyItem = null;
       const result = { ok: true };
       handled.set(p.id, result);
       if (handled.size > 1000) handled.delete(handled.keys().next().value!);
@@ -411,6 +437,7 @@ const timer = setInterval(() => {
       record(game, "Время ответа истекло");
       changed();
     } else if (game.phase === "open") {
+      freezeMelody(game);
       game.phase = "question";
       game.deadline = null;
       bump(game);

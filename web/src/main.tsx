@@ -4,6 +4,18 @@ import { io, Socket } from "socket.io-client";
 import QRCode from "qrcode";
 import "./style.css";
 type State = any;
+const teamNames = [
+  "Тихо, блять, ложимся спать",
+  "Лондон — Магадан",
+  "Паром на Ольхон",
+  "Всезнайки-незнайки, зайки",
+];
+const welcomeTeams = [
+  { people: "Полина и Виктор", name: teamNames[0] },
+  { people: "Саша и Журов", name: teamNames[1] },
+  { people: "Катя и Илья", name: teamNames[2] },
+  { people: "Вика и Миша", name: teamNames[3] },
+];
 const phaseNames: Record<string, string> = {
   lobby: "Собираемся",
   board: "Выбор вопроса",
@@ -86,6 +98,95 @@ function Timer({ s }: { s: State }) {
     </span>
   ) : null;
 }
+const melodyColors = [
+  "#28e77b",
+  "#f1cf3e",
+  "#ff8a35",
+  "#f14e4e",
+  "#ad62ff",
+  "#ef5ad7",
+  "#4bd4ff",
+  "#7f8cff",
+  "#ff6f91",
+  "#c8ff5a",
+];
+function MelodyTimeline({ s }: { s: State }) {
+  const [elapsed, setElapsed] = useState(s.melodyElapsed || 0);
+  const offset = useRef(0);
+  const current = s.current;
+  const ladder = current?.ladder || [];
+  useEffect(() => {
+    offset.current = s.serverTime - Date.now();
+  }, [s.serverTime]);
+  useEffect(() => {
+    const tick = () => {
+      const played =
+        (s.melodyElapsed || 0) +
+        (s.phase === "open" && s.playStartedAt
+          ? (Date.now() + offset.current - s.playStartedAt) / 1000
+          : 0);
+      setElapsed(Math.max(0, Math.min(current?.seconds || 0, played)));
+    };
+    tick();
+    if (s.phase !== "open") return;
+    const timer = setInterval(tick, 50);
+    return () => clearInterval(timer);
+  }, [
+    s.phase,
+    s.playId,
+    s.melodyElapsed,
+    s.playStartedAt,
+    current?.id,
+    current?.seconds,
+  ]);
+  if (!ladder.length) return null;
+  return (
+    <div className="melody-timeline">
+      <div className="melody-levels">
+        {ladder.map((level: any, index: number) => (
+          <span
+            className={
+              (index === s.step ? "active " : "") +
+              (index < s.step ? "passed" : "")
+            }
+            key={`${level.points}-${index}`}
+            style={
+              { "--level-color": melodyColors[index] } as React.CSSProperties
+            }
+          >
+            {level.points}
+          </span>
+        ))}
+      </div>
+      <div
+        className="melody-timebar"
+        aria-label={`Прогресс фрагмента ${s.step + 1}`}
+      >
+        {ladder.map((level: any, index: number) => {
+          const previous = index ? ladder[index - 1].seconds : 0;
+          const fill = Math.max(
+            0,
+            Math.min(1, (elapsed - previous) / (level.seconds - previous)),
+          );
+          return (
+            <i
+              className={index === s.step ? "active" : ""}
+              key={`${level.seconds}-${index}`}
+              style={
+                {
+                  "--level-color": melodyColors[index],
+                  "--fill": `${fill * 100}%`,
+                } as React.CSSProperties
+              }
+            >
+              <b />
+            </i>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function Scores({
   s,
   adjust,
@@ -130,7 +231,7 @@ function Board({ s, select }: { s: State; select?: (id: string) => void }) {
       <div className="track-grid">
         {s.tracks.map((t: any, i: number) => (
           <button
-            className="track"
+            className={"track " + (s.used.includes(t.id) ? "used" : "")}
             key={t.id}
             disabled={!select || s.used.includes(t.id) || s.phase !== "board"}
             onClick={() => select?.(t.id)}
@@ -163,7 +264,7 @@ function Board({ s, select }: { s: State; select?: (id: string) => void }) {
               .sort((a: any, b: any) => a.value - b.value)
               .map((q: any) => (
                 <button
-                  className="cell"
+                  className={"cell " + (s.used.includes(q.id) ? "used" : "")}
                   disabled={
                     !select || s.used.includes(q.id) || s.phase !== "board"
                   }
@@ -180,8 +281,7 @@ function Board({ s, select }: { s: State; select?: (id: string) => void }) {
   );
 }
 function Join() {
-  const [name, setName] = useState(""),
-    [error, setError] = useState(""),
+  const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [player, setPlayer] = useState<any>(() => {
       try {
@@ -199,9 +299,9 @@ function Join() {
   } = useGame(player ? { role: "player", token: player.token } : null);
   const [pressed, setPressed] = useState(false);
   useEffect(() => setPressed(false), [s?.epoch]);
-  async function join(e: React.FormEvent) {
-    e.preventDefault();
+  async function join(name: string) {
     setBusy(true);
+    setError("");
     try {
       const p = await api("/api/join", { name });
       localStorage.setItem("svoya-player", JSON.stringify(p));
@@ -237,31 +337,22 @@ function Join() {
       <main className="phone">
         {!player ? (
           <>
-            <div className="tag">ДВЕ ИГРЫ · ОДИН ВЕЧЕР</div>
             <h1>
-              Сегодня
-              <br />
-              всё <em>про нас.</em>
+              Выбирай свою <em>команду</em>
             </h1>
-            <p className="intro">
-              Своя игра и угадай мелодию.
-              <br />
-              Занимай место — скоро начинаем.
-            </p>
-            <form onSubmit={join} className="join-form">
-              <label>Как тебя представить?</label>
-              <input
-                autoComplete="nickname"
-                value={name}
-                maxLength={24}
-                placeholder="Твоё имя"
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-              <button className="primary" disabled={busy}>
-                {busy ? "Подключаем…" : "Я в игре →"}
-              </button>
-            </form>
+            <div className="team-picker">
+              {teamNames.map((team, index) => (
+                <button
+                  className="team-choice"
+                  disabled={busy}
+                  key={team}
+                  onClick={() => join(team)}
+                >
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <b>{busy ? "Подключаем…" : team}</b>
+                </button>
+              ))}
+            </div>
             {error && <p className="error">{error}</p>}
             <footer>
               Телефон — твоя кнопка.
@@ -354,8 +445,8 @@ function Join() {
                   <p className="muted">На этом этапе ты уже отвечал.</p>
                 )}
                 <div className="section-line">
-                  <span>ТАБЛИЦА ИГРОКОВ</span>
-                  <span>{s.players.length} участников</span>
+                  <span>ТАБЛИЦА КОМАНД</span>
+                  <span>{s.players.length} команд</span>
                 </div>
                 <Scores s={s} />
               </>
@@ -396,6 +487,7 @@ function Media({
   const currentId = s.current?.id;
   const start = s.current?.start || 0;
   const duration = s.current?.seconds || 0;
+  const elapsed = s.melodyElapsed || 0;
   const phase = useRef(s.phase);
   phase.current = s.phase;
   useEffect(() => {
@@ -412,7 +504,7 @@ function Media({
     async function run() {
       if (s.phase === "open") {
         el!.pause();
-        el!.currentTime = start;
+        el!.currentTime = start + elapsed;
         try {
           await el!.play();
           if (stopped || phase.current !== "open") el!.pause();
@@ -431,7 +523,7 @@ function Media({
       stopped = true;
       clearInterval(timer);
     };
-  }, [s.phase, s.playId, start, duration]);
+  }, [s.phase, s.playId, start, duration, elapsed]);
   if (!media) return null;
   const url = "/media/" + media + "?key=" + encodeURIComponent(tvKey);
   const ready = () => {
@@ -526,19 +618,32 @@ function Screen() {
             </span>
             <Timer s={s} />
           </div>
-          {s.phase === "lobby" ? (
+          {s.screenWelcome || s.phase === "lobby" ? (
             <div className="lobby">
-              <div>
+              <div className="welcome-copy">
                 <div className="tag">ПРИСОЕДИНЯЙСЯ</div>
-                <h1>
-                  Все свои.
+                <h1 className="welcome-title">
+                  Добро пожаловать
                   <br />
-                  <em>Все в игре.</em>
+                  <em>в игру!</em>
                 </h1>
-                <p>Сканируй QR-код и введи своё имя.</p>
+                <p className="welcome-subtitle">Подключайтесь по QR-коду</p>
                 <code>{url}</code>
               </div>
-              <QR url={url} />
+              <div className="welcome-qr">
+                <QR url={url} />
+              </div>
+              <div className="welcome-teams">
+                {welcomeTeams.map((team, index) => (
+                  <div className="welcome-team" key={team.name}>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <p>
+                      <b>{team.people}</b>
+                      <small>«{team.name}»</small>
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : s.phase === "board" ? (
             <Board s={s} />
@@ -558,19 +663,24 @@ function Screen() {
               </div>
               <h1>{s.current?.text}</h1>
               {s.mode === "melody" && (
-                <div
-                  className={"wave " + (s.phase === "open" ? "playing" : "")}
-                >
-                  {Array.from({ length: 29 }, (_, i) => (
-                    <i
-                      key={i}
-                      style={{
-                        height: 20 + ((i * 37) % 85),
-                        animationDelay: `${i * 0.07}s`,
-                      }}
-                    />
-                  ))}
-                </div>
+                <>
+                  <MelodyTimeline s={s} />
+                  <div
+                    className={
+                      "wave " + (s.phase === "open" ? "playing" : "")
+                    }
+                  >
+                    {Array.from({ length: 29 }, (_, i) => (
+                      <i
+                        key={i}
+                        style={{
+                          height: 20 + ((i * 37) % 85),
+                          animationDelay: `${i * 0.07}s`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
               <Media s={s} tvKey={key} socket={sock.current} />
               {s.phase === "revealed" && (
@@ -1032,6 +1142,17 @@ function Admin() {
               </button>
             </div>
             <button
+              className={s.screenWelcome ? "active" : ""}
+              disabled={busy || s.phase === "lobby"}
+              onClick={() =>
+                cmd("screenWelcome", { visible: !s.screenWelcome })
+              }
+            >
+              {s.screenWelcome
+                ? "Вернуть игровой экран"
+                : "Показать экран подключения"}
+            </button>
+            <button
               disabled={!["lobby", "board", "finished"].includes(s.phase)}
               onClick={() => setEditor(true)}
             >
@@ -1172,6 +1293,23 @@ function Admin() {
                           </button>
                         </>
                       )}
+                      {s.mode === "melody" &&
+                        ["question", "open"].includes(s.phase) && (
+                          <>
+                            <button
+                              disabled={busy || !s.tv.ready}
+                              onClick={() => cmd("replayStep")}
+                            >
+                              ↻ Повторить отрезок
+                            </button>
+                            <button
+                              disabled={busy || !s.tv.ready}
+                              onClick={() => cmd("restartMelody")}
+                            >
+                              ⏮ С начала песни
+                            </button>
+                          </>
+                        )}
                       {s.mode === "melody" &&
                         ["question", "open"].includes(s.phase) &&
                         s.step + 1 < s.current?.steps && (
@@ -1353,6 +1491,41 @@ function Admin() {
                 >
                   Выйти из пульта
                 </button>
+              </div>
+              <div className="panel room-players">
+                <div className="section-line">
+                  <span>КОМАНДЫ В КОМНАТЕ</span>
+                  <span>{s.players.length} из {teamNames.length}</span>
+                </div>
+                {!s.players.length && (
+                  <p className="muted">Команды пока не подключились.</p>
+                )}
+                {s.players.map((player: any) => {
+                  const online = s.online?.includes(player.id);
+                  return (
+                    <div className="room-player-row" key={player.id}>
+                      <span className={"dot " + (online ? "on" : "")} />
+                      <strong>{player.name}</strong>
+                      <span className={online ? "online" : "offline"}>
+                        {online ? "в сети" : "не в сети"}
+                      </span>
+                      <button
+                        className="tiny danger"
+                        disabled={busy || online}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              `Удалить команду «${player.name}» из комнаты?`,
+                            )
+                          )
+                            cmd("removePlayer", { id: player.id });
+                        }}
+                      >
+                        {online ? "Активна" : "Выкинуть"}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : (

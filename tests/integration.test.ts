@@ -107,9 +107,20 @@ test(
       assert.equal(login.status, 200);
       const cookie = login.headers.get("set-cookie")!.split(";")[0];
       assert.equal((await fetch(url + "/api/pack")).status, 401);
-      const a = await (await post("/api/join", { name: "Антон" })).json();
-      const b = await (await post("/api/join", { name: "Катя" })).json();
-      assert.equal((await post("/api/join", { name: "Антон" })).status, 409);
+      const a = await (
+        await post("/api/join", { name: "Лондон — Магадан" })
+      ).json();
+      const b = await (
+        await post("/api/join", { name: "Паром на Ольхон" })
+      ).json();
+      const inactive = await (
+        await post("/api/join", { name: "Всезнайки-незнайки, зайки" })
+      ).json();
+      assert.equal(
+        (await post("/api/join", { name: "Лондон — Магадан" })).status,
+        409,
+      );
+      assert.equal((await post("/api/join", { name: "Не команда" })).status, 400);
       console.log("Integration: HTTP auth + join passed");
       const admin = await connect({ role: "admin" }, cookie);
       let state: any;
@@ -136,6 +147,26 @@ test(
         return id;
       }
       console.log("Integration: sockets connected");
+      const activeRemoval: any = await admin
+        .timeout(3000)
+        .emitWithAck("command", {
+          id: randomUUID(),
+          revision: state.revision,
+          type: "removePlayer",
+          payload: { id: b.id },
+        });
+      assert.equal(activeRemoval.ok, false);
+      assert.match(activeRemoval.error, /отключения/);
+      await cmd("removePlayer", { id: inactive.id });
+      assert.ok(!state.players.some((p: any) => p.id === inactive.id));
+      assert.equal(
+        (
+          await post("/api/join", {
+            name: "Всезнайки-незнайки, зайки",
+          })
+        ).status,
+        200,
+      );
       await cmd("start");
       await cmd("select", { id: "q0-0" });
       assert.equal(publicView.current.answer, undefined);
